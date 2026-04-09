@@ -1,0 +1,163 @@
+---
+title: "🐧 Réseaux de Neurones avec Tidymodels"
+description: "Classification des espèces de manchots de Palmer"
+author: "FARSI Imad, FOUCAULT Rémy, COLLET Antoine, LARGAIOLLI Emile"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: darkly
+    highlight: espresso
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    df_print: paged
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+# Options globales pour rendre le document plus propre (cache les messages et warnings)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+
+```
+
+## Chargement des librairies et du jeu de données
+
+```{r, message=FALSE, warning=FALSE}
+library(palmerpenguins)
+library(tidymodels)
+library(knitr)
+data(package = 'palmerpenguins')
+```
+
+## Le jeu de données palmer penguins
+
+```{r}
+
+dim(penguins)
+head(penguins)
+sum(is.na(penguins)) # Nombre total de valeurs manquantes
+
+#penguins
+#summary(penguins)
+```
+
+-\> On remarque qu'il ya des valeurs manquantes dans le JDD et qu'il y a des variables catégorielles et que le JDD est trié par Y species - attention
+
+## Sépartion du JDD
+
+```{r}
+
+penguins_clean <- penguins |> drop_na() # Supprimer les lignes avec des valeurs manquantes
+
+set.seed(123) # Pour la reproductibilité
+
+#Séparer les JDD
+
+penguins_split <- initial_split(penguins_clean, prop = 0.75, strata = species)
+
+penguins_train <- training(penguins_split)
+penguins_test  <- testing(penguins_split)
+
+```
+
+la fonction initial_split() et l'argument strata permet, par défaut, d'effectuer un échantillonnage aléatoire (elle mélange les lignes).
+
+## Pretraitement des données
+
+```{r}
+set.seed(123)
+# Création de la recette de prétraitement avec tidymodels
+penguins_recipe <- recipe(species ~ ., data = penguins_train) |>
+  
+  # Normalisation CR
+  step_normalize(all_numeric_predictors()) |>
+  
+  # Transformation des variables catégorielles en variables indicatrices 1/0
+  step_dummy(all_nominal_predictors())
+
+
+```
+
+## Specification du modèle
+
+```{r}
+set.seed(123)
+nn_spec <- mlp(
+  hidden_units = 5,  # Nombre de neurones dans la couche cachée
+  penalty = 0.01,    # Régularisation pour éviter le surapprentissage
+  epochs = 100       # Nombre d'itérations sur les données
+) |>
+  set_engine("nnet") |> # Utilisation du package 'nnet'
+  set_mode("classification") # Objectif : prédire une catégorie l'espece du manchot
+
+
+```
+
+mlp() signifie "Multilayer Perceptron". Il s'agit d'un type de réseau de neurones artificiels qui est composé de plusieurs couches de neurones, y compris une couche d'entrée, une ou plusieurs couches cachées et une couche de sortie.
+
+La spécification sépare l'algorithme, le moteur et l'objectif pour rendre le modèle interchangeable et facilement optimisable.
+
+## Creation du Worklow
+
+```{r}
+set.seed(123)
+nn_workflow <- workflow() |>
+  add_recipe(penguins_recipe) |> # Ajout de la recette de prétraitement
+  add_model(nn_spec) # Ajout de la spécification du modèle
+
+```
+
+On a créé un workflow qui combine la recette de prétraitement et la spécification du modèle. Cela permet de gérer l'ensemble du processus de modélisation de manière cohérente et reproductible.
+
+## Calibration des paramètres du modèle
+
+```{r}
+set.seed(123)
+penguins_folds <- vfold_cv(penguins_train, v = 5, strata = species)
+
+nn_best_param <- tune_grid(
+  nn_workflow,
+  resamples = penguins_folds,
+  grid = 10 # Teste 10 combinaisons d'hyperparamètres
+)
+
+
+best_mlp <- select_best(nn_best_param, metric = "accuracy") # Sélectionne la meilleure combinaison d'hyperparamètres basée sur l'accuracy
+
+final_workflow <- finalize_workflow(nn_workflow, best_mlp) # Finalise le workflow avec les meilleurs hyperparamètres
+
+
+```
+
+On utilise la fonction tune_grid() pour effectuer une recherche d'hyperparamètres en testant différentes combinaisons de paramètres du modèle. Les performances de chaque combinaison sont évaluées à l'aide de la validation croisée définie.
+
+## Entrainement du modèle
+
+```{r}
+set.seed(123)
+# On ajuste le modèle sur les données d'entraînement
+nn_fit <- final_workflow |>
+  fit(data = penguins_train)
+
+```
+
+## Évaluation sur les données de test
+
+```{r}
+set.seed(123)
+# Prédictions sur les données de test
+
+nn_predictions <- nn_fit |> 
+  predict(new_data = penguins_test) |>  # Prédiction des classes
+  bind_cols(predict(nn_fit, new_data = penguins_test, type = "prob")) |>  # Prédiction des probabilités que l'individus appartiennes à l'espece predite
+  bind_cols(penguins_test |> select(species)) # on ajoute de la variable cible connue pour comparaison
+
+
+print(head(nn_predictions)) 
+
+nn_predictions |> metrics(truth = species, estimate = .pred_class) # accuracy et kap comme on est dans une classification
+
+```
+
+On utilise la fonction predict() pour générer des prédictions à partir du modèle ajusté. Ensuite, on évalue les performances du modèle en comparant les prédictions avec les valeurs réelles de la variable cible (species) à l'aide de la fonction metrics() notre modèle correspondent à la réalité, en excluant de son calcul toutes les bonnes réponses qui auraient pu être obtenues par simple hasard.
