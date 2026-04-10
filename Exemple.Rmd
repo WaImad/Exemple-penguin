@@ -5,8 +5,8 @@ author: "FARSI Imad, FOUCAULT Rémy, COLLET Antoine, LARGAIOLLI Emile"
 date: "`r Sys.Date()`"
 output: 
   html_document:
-    theme: darkly
-    highlight: espresso
+    theme: cosmo
+    highlight: tango
     toc: true
     toc_float: true
     toc_depth: 3
@@ -27,6 +27,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(palmerpenguins)
 library(tidymodels)
 library(knitr)
+library(ggplot2)
 data(package = 'palmerpenguins')
 ```
 
@@ -34,9 +35,10 @@ data(package = 'palmerpenguins')
 
 ```{r}
 
-dim(penguins)
+
 head(penguins)
-sum(is.na(penguins)) # Nombre total de valeurs manquantes
+sum(is.na(penguins))
+dim(penguins)# Nombre total de valeurs manquantes
 
 #penguins
 #summary(penguins)
@@ -121,7 +123,6 @@ nn_best_param <- tune_grid(
   resamples = penguins_folds,
   grid = 10 # Teste 10 combinaisons d'hyperparamètres
 )
-
 
 best_mlp <- select_best(nn_best_param, metric = "accuracy") # Sélectionne la meilleure combinaison d'hyperparamètres basée sur l'accuracy
 
